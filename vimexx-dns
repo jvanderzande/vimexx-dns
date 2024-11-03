@@ -1,0 +1,314 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use v5.20;
+
+use AppConfig::Std;
+use LWP::UserAgent;
+use HTTP::Request::Common;
+use JSON;
+use Data::Dump;
+use DB_File;
+
+use vars qw ($VERSION);
+$VERSION = '1.0';
+
+my $config = AppConfig::Std->new();
+
+# These are all the options that can be set in a config file or as an argument
+$config->define("record_ttl=i",     { DEFAULT => 24*3600, VALIDATE => '\d+' });
+$config->define("delete|d!",        { DEFAULT => 0 });
+$config->define("dryrun!",          { DEFAULT => 0 });
+$config->define("clear|c!",         { DEFAULT => 0 });
+$config->define("ddns!",            { DEFAULT => 0 });
+$config->define("cache=s",          { DEFAULT => '/dev/shm/vimexx.cache' });
+$config->define("getip=s",          { DEFAULT => 'http://icanhazip.com' });
+$config->define("login_id=i");
+$config->define("login_secret=s");
+$config->define("login_username=s");
+$config->define("login_password=s");
+
+# Collect options values from config files and/or arguments
+my @files = ("/etc/vimexx-dns", "$ENV{'HOME'}/.vimexx-dns", ".vimexx-dns");
+map { $config->file($_) or die "Invalid configuration file" if -r $_ } @files;
+$config->args() or die "Invalid arguments";
+
+# Add remaining options that currently can't be set
+$config->define("record_type|t=s",  { DEFAULT => $config->ddns ? "A" : "TXT", VALIDATE => '^(TXT|A)$' });
+$config->define("record_name|n=s",  { DEFAULT => '_acme-challenge' });
+
+=pod
+
+=head1 NAME
+
+vimexx.pl - Manage DNS records on Vimexx.eu
+
+=head1 SYNOPSIS
+
+vimexx.pl [OPTION]... DOMAIN [CONTENT]
+
+=head1 OPTIONS AND ARGUMENTS
+
+     -record_ttl     Specify DNS TTL in seconds - defaults to 24*60*60
+
+  -d,-delete         Deletes the most recently added record, but only if
+                     it was added in the last 600 seconds.
+  -c,-clear          Clears the cache with the authentication token and
+                     the DNS records, forcing renewal.
+
+     -ddns           Run in dynamic DNS mode, obtaining the current IPv4
+                     address and updating an A record.
+
+     -login_id       Vimexx API id
+     -login_secret   Vimexx API secret
+     -login_username Vimexx login
+     -login_password Vimexx password
+
+     -cache          Set location of cache - defaults to '/dev/shm/vimexx.cache'
+
+     -getip          Set URL which returns public IPv4 - defaults to 'http://icanhazip.com'
+
+=head1 DESCRIPTION
+
+This script uses the Vimexx API to add or delete DNS records for a domain
+hosted by the Vimexx nameserver.
+
+The main purpose of this script is to enable Certbot to validate domain
+ownership using a DNS-01 challenge, and to automate this procedure.
+
+It is also be possible to update a record in your domain with the current
+public IPv4 address of your internet connection, thus avoiding the use of
+a 3th party dynamic DNS service.
+
+=cut
+
+unless ( defined $config->login_id and defined $config->login_secret and
+         defined $config->login_username and defined $config->login_password ) {
+  require Pod::Usage;
+  Pod::Usage::pod2usage( { -message => "Missing login credential(s)!",
+                           -exitval => 1,
+                           -verbose => 1,
+                         });
+}
+
+my $domain = shift;
+
+unless ( defined $domain ) {
+  require Pod::Usage;
+  Pod::Usage::pod2usage( { -message => "No domain specified!",
+                           -exitval => 1,
+                           -verbose => 1,
+                         });
+}
+
+print "Updating domain '$domain'.\n" if $config->verbose;
+
+# www.example.com = $ssld.$sld.$tld
+my @domains = split /\./, $domain;
+my $tld = pop @domains;
+my $sld = pop @domains;
+my $ssld = join '.', @domains;
+$domain = "$sld.$tld";
+
+my $content = shift;
+unless ( $config->ddns or $config->delete or defined $content ) {
+  require Pod::Usage;
+  Pod::Usage::pod2usage( { -message => "No content specified!",
+                           -exitval => 1,
+                           -verbose => 1,
+                         });
+}
+
+my $ua = LWP::UserAgent->new( timeout => 10 );
+
+#
+# When rFigure out our current public IPv4 address unless specified
+#
+if ( $config->ddns and not $config->delete and not defined $content ) {
+
+  my $r = HTTP::Request::Common::GET($config->getip);
+  my $response = $ua->request($r);
+  die "Invalid response: $response->{'_content'}" unless $response->is_success;
+
+  $content = $response->{'_content'}; chomp($content);
+
+  print "Our IP address is '$content'\n" if $config->verbose;
+}
+
+print "Using content '$content'.\n" if defined $content and $config->verbose;
+
+tie my %cache, 'DB_File', $config->cache, O_CREAT|O_RDWR, 0600;
+
+if ( $config->clear ) {
+  delete $cache{'auth.expires'};
+  delete $cache{"dns.$domain.timestamp"};
+}
+
+#
+# Get authentication token if necessary
+#
+unless ( exists $cache{'auth.expires'} and $cache{'auth.expires'}>time() ) {
+
+  print "Requesting new authentication token.\n" if $config->verbose;
+
+  my %data = (
+    grant_type => 'password',
+    client_id => $config->login_id,
+    client_secret => $config->login_secret,
+    username => $config->login_username,
+    password => $config->login_password,
+    scope => 'whmcs-access',
+  );
+
+  my $r = HTTP::Request::Common::POST('https://api.vimexx.nl/auth/token', [ %data ]);
+  my $response = $ua->request($r);
+  die "Unable to get authentication token: $response->{'_content'}" unless $response->is_success;
+
+  print "Received new authentication code.\n" if $config->verbose;
+
+  my $decoded = decode_json $response->decoded_content;
+  dd $decoded if $config->debug;
+  map { $cache{"auth.$_"} = $decoded->{$_} } keys %{$decoded};
+  $cache{'auth.expires'} = $decoded->{'expires_in'} + time() - 3600;
+} else {
+  print "Using cached authentication token.\n" if $config->verbose;
+}
+
+my %data = (
+  body => { 'sld' => $sld, 'tld' => $tld },
+  version => '7.7.1-release.1',
+);
+
+my $records;
+
+#
+# Get DNS records.
+#
+unless ( exists $cache{"dns.$domain.timestamp"} and $cache{"dns.$domain.timestamp"}+600>time() ) {
+
+  print "Requesting DNS records for $domain.\n" if $config->verbose;
+
+  my $r = HTTP::Request::Common::POST('https://api.vimexx.nl/api/v1/whmcs/domain/dns',
+                                      'Authorization' => $cache{'auth.token_type'} . ' ' . $cache{'auth.access_token'},
+                                      'Content' => encode_json \%data);
+  my $response = $ua->request($r);
+  die "Unable to get DNS records: $response->{'_content'}" unless $response->is_success;
+
+  my $decoded = decode_json($response->decoded_content)->{data};
+
+  printf("Received %d records.\n", scalar @{$decoded->{'dns_records'}}) if $config->verbose;
+
+  # Cleanup: add ttl fields and remove unnecessary prio fields
+  foreach my $record ( @{$decoded->{'dns_records'}} ) {
+    $record->{'ttl'} = $config->record_ttl;
+    delete $record->{'prio'} unless defined $record->{'prio'};
+  }
+
+  $records = $decoded->{'dns_records'};
+
+  # Update the cache with the records we have
+  $cache{"dns.$domain.timestamp"} = time();
+  $cache{"dns.$domain"} = encode_json $records;
+
+} else {
+  # Valid DNS records are found for this domain
+  $records = decode_json $cache{"dns.$domain"};
+  printf("Loaded %d cached DNS records.\n", scalar @{$records}) if $config->verbose;
+}
+
+dd $records if $config->debug;
+
+#
+# The record we're about to add/delete/update
+#
+my %new_record = (
+  content => $content,
+  name    => $config->record_name . '.' . $ssld . '.' . $domain . '.',
+  ttl     => $config->record_ttl,
+  type    => $config->record_type,
+);
+
+if ( $config->ddns ) {
+  # Set a DNS A record, this is not a challenge
+  $new_record{'name'} = $ssld . '.' . $domain . '.';
+}
+
+# Did anything actually change?
+my $dns_changed = 0;
+
+# Did we find a previous version of this record?
+my $found_old = 0;
+
+#
+# Loop over all the records, and add/delete/update as necessary.
+# This is not bullet proof. Things can get messy when updating similar
+# records, e.g. MX records. For this reason, the only records supported
+# are A en TXT records, for dynamic dns and DNS-01 challenges resp.
+#
+foreach my $record ( @{$records} ) {
+  if ( $record->{'type'} eq $new_record{'type'} and
+       $record->{'name'} eq $new_record{'name'} ) {
+
+    # Found old record
+    $found_old = 1;
+
+    if ( $config->delete ) {
+
+      # Something is changing, i.e., delete this record
+      printf("Deleting DNS '%s' record '%s'\n", $record->{'type'}, $record->{'name'}) if $config->verbose;
+      $dns_changed = 1;
+
+    } elsif ( $record->{'content'} eq $new_record{'content'} ) {
+
+      # Nothing actually changed, just keep this record
+      printf("Unchanged DNS '%s' record '%s'\n", $record->{'type'}, $record->{'name'}) if $config->verbose;
+      push @{$data{'body'}{'dns_records'}} , $record;
+
+    } else {
+
+      # The record actually changed
+      printf("Updating DNS '%s' record '%s'\n", $record->{'type'}, $record->{'name'}) if $config->verbose;
+      push @{$data{'body'}{'dns_records'}} , \%new_record;
+      $dns_changed = 1;
+
+    }
+
+  } else {
+
+    # Not interested in this record, just keep it as-is
+    push @{$data{'body'}{'dns_records'}} , $record;
+
+  }
+}
+
+# Finally, if the new_record was in fact totally new, add it here
+unless ( $found_old ) {
+  printf("Adding DNS '%s' record '%s'\n", $new_record{'type'}, $new_record{'name'}) if $config->verbose;
+  push @{$data{'body'}{'dns_records'}} , \%new_record;
+  $dns_changed = 1;
+}
+
+dd $data{'body'}{'dns_records'} if $config->debug;
+
+#
+# And update DNS records
+#
+if ( $dns_changed and not $config->dryrun ) {
+  my $r = HTTP::Request::Common::PUT('https://api.vimexx.nl/api/v1/whmcs/domain/dns',
+                                     'Authorization' => $cache{'auth.token_type'} . ' ' . $cache{'auth.access_token'},
+                                     'Content' => encode_json \%data);
+  my $response = $ua->request($r);
+  die "Unable to set DNS records: $response->{'_content'}" unless $response->is_success;
+
+  printf("Succesfully updated DNS records.\n", scalar @{$data{'body'}{'dns_records'}}) if $config->verbose;
+
+  # Update the cache with the DNS records we just created
+  $cache{"dns.$domain.timestamp"} = time();
+  $cache{"dns.$domain"} = encode_json $data{'body'}{'dns_records'};
+} else {
+  print "No DNS records modified, nothing to do.\n" unless $dns_changed;
+  print "Not writing updates (-dryrun).\n" if $dns_changed and $config->dryrun;
+}
+
+print "Finished.\n" if $config->verbose;
