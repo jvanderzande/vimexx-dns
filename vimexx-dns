@@ -14,14 +14,25 @@ use DB_File;
 use vars qw ($VERSION);
 $VERSION = '1.0';
 
-my $config = AppConfig::Std->new();
+my %ttl = (
+  '24h' => 24*3600,
+  '8h'  =>  8*3600,
+  '4h'  =>  4*3600,
+  '2h'  =>  2*3600,
+  '1h'  =>  1*3600,
+  '10m' =>  10*60,
+  '5m'  =>  5*60,
+);
+
+my $config = AppConfig::Std->new( { ERROR => sub { printf STDERR "Ignoring invalid argument: " . shift . "\n" } } );
 
 # These are all the options that can be set in a config file or as an argument
-$config->define("record_ttl=i",     { DEFAULT => 24*3600, VALIDATE => '\d+' });
+$config->define("record_ttl|t=s",   { DEFAULT => '24h', VALIDATE => '^(24h|8h|4h|2h|1h|10m|5m)$' });
 $config->define("delete|d!",        { DEFAULT => 0 });
 $config->define("dryrun!",          { DEFAULT => 0 });
 $config->define("clear|c!",         { DEFAULT => 0 });
 $config->define("ddns!",            { DEFAULT => 0 });
+$config->define("quiet|q!",         { DEFAULT => 0 });
 $config->define("cache=s",          { DEFAULT => '/dev/shm/vimexx.cache' });
 $config->define("getip=s",          { DEFAULT => 'http://icanhazip.com' });
 $config->define("login_id=i");
@@ -38,6 +49,9 @@ $config->args() or die "Invalid arguments";
 $config->define("record_type|t=s",  { DEFAULT => $config->ddns ? "A" : "TXT", VALIDATE => '^(TXT|A)$' });
 $config->define("record_name|n=s",  { DEFAULT => '_acme-challenge' });
 
+# Debug mode enables verbose by default
+$config->verbose(1) if $config->debug;
+
 =pod
 
 =head1 NAME
@@ -46,11 +60,12 @@ vimexx.pl - Manage DNS records on Vimexx.eu
 
 =head1 SYNOPSIS
 
-vimexx.pl [OPTION]... DOMAIN [CONTENT]
+vimexx-dns [OPTION]... DOMAIN [CONTENT]
 
 =head1 OPTIONS AND ARGUMENTS
 
-     -record_ttl     Specify DNS TTL in seconds - defaults to 24*60*60
+  -t,-record_ttl     Specify DNS TTL. Valid values are 24h (the default),
+                     8h, 4h, 2h, 1h, 10m and 5m.
 
   -d,-delete         Deletes the most recently added record, but only if
                      it was added in the last 600 seconds.
@@ -59,6 +74,11 @@ vimexx.pl [OPTION]... DOMAIN [CONTENT]
 
      -ddns           Run in dynamic DNS mode, obtaining the current IPv4
                      address and updating an A record.
+
+     -help           Print this info
+     -verbose        Verbose output
+     -debug          Debug output
+  -q,-quiet          Surpress all output
 
      -login_id       Vimexx API id
      -login_secret   Vimexx API secret
@@ -123,7 +143,7 @@ unless ( $config->ddns or $config->delete or defined $content ) {
 my $ua = LWP::UserAgent->new( timeout => 10 );
 
 #
-# When rFigure out our current public IPv4 address unless specified
+# Figure out our current public IPv4 address unless specified
 #
 if ( $config->ddns and not $config->delete and not defined $content ) {
 
@@ -201,7 +221,7 @@ unless ( exists $cache{"dns.$domain.timestamp"} and $cache{"dns.$domain.timestam
 
   # Cleanup: add ttl fields and remove unnecessary prio fields
   foreach my $record ( @{$decoded->{'dns_records'}} ) {
-    $record->{'ttl'} = $config->record_ttl;
+    $record->{'ttl'} = $ttl{$config->record_ttl};
     delete $record->{'prio'} unless defined $record->{'prio'};
   }
 
@@ -225,7 +245,7 @@ dd $records if $config->debug;
 my %new_record = (
   content => $content,
   name    => $config->record_name . '.' . $ssld . '.' . $domain . '.',
-  ttl     => $config->record_ttl,
+  ttl     => $ttl{$config->record_ttl},
   type    => $config->record_type,
 );
 
@@ -256,19 +276,19 @@ foreach my $record ( @{$records} ) {
     if ( $config->delete ) {
 
       # Something is changing, i.e., delete this record
-      printf("Deleting DNS '%s' record '%s'\n", $record->{'type'}, $record->{'name'}) if $config->verbose;
+      printf("Deleting DNS '%s' record '%s'\n", $record->{'type'}, $record->{'name'}) unless $config->quiet;
       $dns_changed = 1;
 
     } elsif ( $record->{'content'} eq $new_record{'content'} ) {
 
       # Nothing actually changed, just keep this record
-      printf("Unchanged DNS '%s' record '%s'\n", $record->{'type'}, $record->{'name'}) if $config->verbose;
+      printf("Unchanged DNS '%s' record '%s' -> '%s'\n", $record->{'type'}, $record->{'name'}, $new_record{'content'}) if $config->verbose;
       push @{$data{'body'}{'dns_records'}} , $record;
 
     } else {
 
       # The record actually changed
-      printf("Updating DNS '%s' record '%s'\n", $record->{'type'}, $record->{'name'}) if $config->verbose;
+      printf("Updating DNS '%s' record '%s' -> '%s'\n", $record->{'type'}, $record->{'name'}, $new_record{'content'}) unless $config->quiet;
       push @{$data{'body'}{'dns_records'}} , \%new_record;
       $dns_changed = 1;
 
@@ -284,7 +304,7 @@ foreach my $record ( @{$records} ) {
 
 # Finally, if the new_record was in fact totally new, add it here
 unless ( $found_old ) {
-  printf("Adding DNS '%s' record '%s'\n", $new_record{'type'}, $new_record{'name'}) if $config->verbose;
+  printf("Adding DNS '%s' record '%s' -> '%s'\n", $new_record{'type'}, $new_record{'name'}, $new_record{'content'}) unless $config->quiet;
   push @{$data{'body'}{'dns_records'}} , \%new_record;
   $dns_changed = 1;
 }
@@ -306,7 +326,7 @@ if ( $dns_changed and not $config->dryrun ) {
   # Update the cache with the DNS records we just created
   $cache{"dns.$domain.timestamp"} = time();
   $cache{"dns.$domain"} = encode_json $data{'body'}{'dns_records'};
-} else {
+} elsif ( $config->verbose ) {
   print "No DNS records modified, nothing to do.\n" unless $dns_changed;
   print "Not writing updates (-dryrun).\n" if $dns_changed and $config->dryrun;
 }

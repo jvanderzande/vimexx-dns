@@ -56,6 +56,46 @@ password = <Your Vimexx password>
 
 (!) Be carefull where and how you keep this file, as it will allow full access to your DNS records.
 
+# Usage
+
+```
+Usage:
+    vimexx-dns [OPTION]... DOMAIN [CONTENT]
+
+Options and Arguments:
+      -t,-record_ttl     Specify DNS TTL. Valid values are 24h (the default),
+                         8h, 4h, 2h, 1h, 10m and 5m.
+
+      -d,-delete         Deletes the most recently added record, but only if
+                         it was added in the last 600 seconds.
+      -c,-clear          Clears the cache with the authentication token and
+                         the DNS records, forcing renewal.
+
+         -ddns           Run in dynamic DNS mode, obtaining the current IPv4
+                         address and updating an A record.
+
+         -help           Print this info
+         -verbose        Verbose output
+         -debug          Debug output
+      -q,-quiet          Surpress all output
+
+         -login_id       Vimexx API id
+         -login_secret   Vimexx API secret
+         -login_username Vimexx login
+         -login_password Vimexx password
+
+         -cache          Set location of cache - defaults to '/dev/shm/vimexx.cache'
+
+         -getip          Set URL which returns public IPv4 - defaults to 'http://icanhazip.com'
+```
+
+Please note that a quirk of the API provided by Vimexx is that the DNS records returned by the API call
+do not contain the TTL information. It is also not possible to update a single DNS record.
+
+Because of this, when *anything* is changed to *any* DNS record, it is necessary to rewrite *all*
+DNS records, and while doing so, *all* TTL values for *all* DNS records will be set to '24h' (or whatever
+is provided in a configuration file or as an argument).
+
 # Integration with Certbot
 
 ## Install Certbot
@@ -119,3 +159,4 @@ certbot --preferred-challenges dns renew
 vimexx-dns -ddns myhomeserver.example.com
 ```
 This will create or update the DNS A record for 'myhomeserver.example.com' with your current public IPv4 address.
+
