@@ -321,7 +321,7 @@ if ( $dns_changed and not $config->dryrun ) {
   my $response = $ua->request($r);
   die "Unable to set DNS records: $response->{'_content'}" unless $response->is_success;
 
-  printf("Succesfully updated DNS records.\n", scalar @{$data{'body'}{'dns_records'}}) if $config->verbose;
+  printf("Succesfully updated %d DNS records.\n", scalar @{$data{'body'}{'dns_records'}}) if $config->verbose;
 
   # Update the cache with the DNS records we just created
   $cache{"dns.$domain.timestamp"} = time();

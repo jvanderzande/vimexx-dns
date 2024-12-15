@@ -100,7 +100,7 @@ is provided in a configuration file or as an argument).
 
 ## Install Certbot
 
-The first step in installing Certbot on a secure host, preferably not a public-facing (web) server.
+The first step is installing Certbot on a secure host, preferably not a public-facing (web) server.
 Follow the instructions provided [here](https://certbot.eff.org/instructions).
 
 ## Requesting a new certificate
