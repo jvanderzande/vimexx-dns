@@ -130,6 +130,9 @@ my $tld = pop @domains;
 my $sld = pop @domains;
 my $ssld = join '.', @domains;
 $domain = "$sld.$tld";
+if ($ssld ne '') {
+  $ssld .= '.';
+}
 
 my $content = shift;
 unless ( $config->ddns or $config->delete or defined $content ) {
@@ -244,14 +247,14 @@ dd $records if $config->debug;
 #
 my %new_record = (
   content => $content,
-  name    => $config->record_name . '.' . $ssld . '.' . $domain . '.',
+  name    => $config->record_name . '.' . $ssld . $domain . '.',
   ttl     => $ttl{$config->record_ttl},
   type    => $config->record_type,
 );
 
 if ( $config->ddns ) {
   # Set a DNS A record, this is not a challenge
-  $new_record{'name'} = $ssld . '.' . $domain . '.';
+  $new_record{'name'} = $ssld . $domain . '.';
 }
 
 # Did anything actually change?
