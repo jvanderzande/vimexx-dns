@@ -1,0 +1,12 @@
+FROM alpine
+COPY vimexx-dns /bin
+COPY vimexx-dns.sh /bin
+RUN set -x ; \
+    apk update \
+    && apk add perl db zlib openssl \
+    && apk add build-base perl-dev perl-app-cpanminus db-dev zlib-dev openssl-dev \
+    && cpanm JSON AppConfig::Std LWP::UserAgent Data::Dump DB_File LWP::Protocol::https \
+    && rm -rf /root/.cpanm /var/cache/apk/* /usr/local/share/man/man?/* \
+    && apk del build-base perl-dev perl-app-cpanminus db-dev zlib-dev openssl-dev
+
+ENTRYPOINT ["/bin/vimexx-dns.sh"]

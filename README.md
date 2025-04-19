@@ -160,3 +160,24 @@ vimexx-dns -ddns myhomeserver.example.com
 ```
 This will create or update the DNS A record for 'myhomeserver.example.com' with your current public IPv4 address.
 
+## Using the docker image
+
+A [docker image](https://hub.docker.com/repository/docker/2kman/vimexx-ddns-client/general) to keep your A record in sync with your current public IPv4 address is also available.
+
+This is a sample Docker Compose configuration file.
+
+```
+services:
+  vimexx-ddns-client:
+    container_name: vimexx-ddns-client
+    image: 2kman/vimexx-ddns-client:alpine
+    restart: unless-stopped
+    environment:
+      - VIMEXX_DNS_ID=<Client ID>
+      - VIMEXX_DNS_SECRET=<Client Secret>
+      - VIMEXX_DNS_USERNAME=<Your Vimexx username>
+      - VIMEXX_DNS_PASSWORD=<Your Vimexx password>
+      - VIMEXX_DNS_DOMAIN=<your.domain.com>
+```
+
+This can also be used directly to create a [Portainer stack](https://docs.portainer.io/user/docker/stacks/add).

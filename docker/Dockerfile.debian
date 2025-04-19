@@ -1,0 +1,7 @@
+FROM debian
+COPY vimexx-dns /bin
+COPY vimexx-dns.sh /bin
+RUN set -x ; \
+    apt-get update \
+    && apt-get -y install libjson-perl libappconfig-std-perl liblwp-protocol-https-perl
+ENTRYPOINT ["/bin/vimexx-dns.sh"]
