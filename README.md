@@ -40,7 +40,7 @@ This script will require access to the API provided by Vimexx.
 
 The script will search for a configuration file in the following locations:
 
-- /etc/vimexx-dns
+- /etc/vimexx-dns.conf
 - $HOME/.vimexx-dns
 - .vimexx-dns in the working directory
 
@@ -164,6 +164,8 @@ This will create or update the DNS A record for 'myhomeserver.example.com' with 
 
 A [docker image](https://hub.docker.com/repository/docker/2kman/vimexx-ddns-client/general) to keep your A record in sync with your current public IPv4 address is also available.
 
+The docker container needs access to your secrets. Create a configuration file as shown above, and write it somewhere secure where docker has access to it, then add it to your docker container as shown below in the Docker Compose configuration file.
+
 This is a sample Docker Compose configuration file.
 
 ```
@@ -172,11 +174,9 @@ services:
     container_name: vimexx-ddns-client
     image: 2kman/vimexx-ddns-client:alpine
     restart: unless-stopped
+    volumes:
+      - /path/to/secure/config/file:/etc/vimexx-dns.conf:ro
     environment:
-      - VIMEXX_DNS_ID=<Client ID>
-      - VIMEXX_DNS_SECRET=<Client Secret>
-      - VIMEXX_DNS_USERNAME=<Your Vimexx username>
-      - VIMEXX_DNS_PASSWORD=<Your Vimexx password>
       - VIMEXX_DNS_DOMAIN=<your.domain.com>
 ```
 

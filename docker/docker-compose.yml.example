@@ -3,9 +3,7 @@ services:
     container_name: vimexx-ddns-client
     image: 2kman/vimexx-ddns-client:alpine
     restart: unless-stopped
+    volumes:
+      - /path/to/secure/config/file:/etc/vimexx-dns.conf:ro
     environment:
-      - VIMEXX_DNS_ID=<Client ID>
-      - VIMEXX_DNS_SECRET=<Client Secret>
-      - VIMEXX_DNS_USERNAME=<Your Vimexx username>
-      - VIMEXX_DNS_PASSWORD=<Your Vimexx password>
       - VIMEXX_DNS_DOMAIN=<myhomeserver.example.com>

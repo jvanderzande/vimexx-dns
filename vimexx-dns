@@ -41,7 +41,7 @@ $config->define("login_username=s");
 $config->define("login_password=s");
 
 # Collect options values from config files and/or arguments
-my @files = ("/etc/vimexx-dns", "$ENV{'HOME'}/.vimexx-dns", ".vimexx-dns");
+my @files = ("/etc/vimexx-dns.conf", "$ENV{'HOME'}/.vimexx-dns", ".vimexx-dns");
 map { $config->file($_) or die "Invalid configuration file" if -r $_ } @files;
 $config->args() or die "Invalid arguments";
 

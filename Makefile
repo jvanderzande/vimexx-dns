@@ -14,7 +14,7 @@ IMAGES := $(patsubst $(DOCKER_DIR)/Dockerfile.%,%, $(DOCKERFILES))
 IMAGE_PREFIX := 2kman/vimexx-ddns-client
 
 # Versie die aan images wordt toegevoegd
-VERSION := 1.0.0
+VERSION := 1.0.1
 
 # Default target
 .PHONY: all
@@ -70,11 +70,15 @@ all-%: build-% push-%
 # Start een container met environment config
 .PHONY: start-%
 start-%:
-	@if [ ! -f env ]; then \
+	@if [ ! -f docker/env ]; then \
 		echo "❌ Error: 'env' file not found. Cannot start container."; \
 		exit 1; \
 	fi
-	$(DOCKER) run -d --rm --env-file env --name $* $(IMAGE_PREFIX):$*-$(VERSION)
+	@if [ ! -f conf ]; then \
+		echo "❌ Error: 'conf' file not found. Cannot start container."; \
+		exit 1; \
+	fi
+	$(DOCKER) run -d --rm -v $(CURDIR)/conf:/etc/vimexx-dns.conf:ro --env-file docker/env --name $* $(IMAGE_PREFIX):$*-$(VERSION)
 
 # Stop een container
 .PHONY: stop-%

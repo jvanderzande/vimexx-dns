@@ -1,0 +1,5 @@
+[login]
+id = <Client ID>
+secret = <Client Secret>
+username = <Your Vimexx username>
+password = <Your Vimexx password>

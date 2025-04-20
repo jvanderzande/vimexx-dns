@@ -1,7 +1,7 @@
 FROM debian
-COPY vimexx-dns /bin
-COPY vimexx-dns.sh /bin
+COPY vimexx-dns /root
+COPY docker/start.sh /root
 RUN set -x ; \
     apt-get update \
     && apt-get -y install libjson-perl libappconfig-std-perl liblwp-protocol-https-perl
-ENTRYPOINT ["/bin/vimexx-dns.sh"]
+ENTRYPOINT ["/root/start.sh"]
