@@ -7,3 +7,4 @@ services:
       - /path/to/secure/config/file:/etc/vimexx-dns.conf:ro
     environment:
       - VIMEXX_DNS_DOMAIN=<myhomeserver.example.com>
+      - VIMEXX_SLEEP=<delay between runs, 30s by default>

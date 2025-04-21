@@ -65,6 +65,9 @@ Usage:
 Options and Arguments:
       -t,-record_ttl     Specify DNS TTL. Valid values are 24h (the default),
                          8h, 4h, 2h, 1h, 10m and 5m.
+      -n,-nons           Do NOT use an authorative nameserver to find the actual TTL
+                         of a DNS record. When this is set, all records will be set to
+                         the TTL specified with -t.
 
       -d,-delete         Deletes the most recently added record, but only if
                          it was added in the last 600 seconds.
@@ -89,12 +92,12 @@ Options and Arguments:
          -getip          Set URL which returns public IPv4 - defaults to 'http://icanhazip.com'
 ```
 
-Please note that a quirk of the API provided by Vimexx is that the DNS records returned by the API call
-do not contain the TTL information. It is also not possible to update a single DNS record.
+Please note that due to a limitation in the Vimexx API, the DNS records returned by an API call do not include TTL (Time To Live) information. Additionally, it is not possible to update individual DNS records — any update requires rewriting all records.
 
-Because of this, when *anything* is changed to *any* DNS record, it is necessary to rewrite *all*
-DNS records, and while doing so, *all* TTL values for *all* DNS records will be set to '24h' (or whatever
-is provided in a configuration file or as an argument).
+To avoid resetting the TTL of all DNS records to the default value each time a change is made, this script, by default, queries an authoritative nameserver for each DNS record returned by the Vimexx API to retrieve the current TTL.
+
+This behavior can be disabled using the `-nons` option. However, if this option is used and the DNS records need
+an update, then the TTL for *all* DNS records will be set to `'24h'` (or to the value specified in the configuration file or as a command-line argument).
 
 # Integration with Certbot
 
@@ -166,7 +169,10 @@ A [docker image](https://hub.docker.com/repository/docker/2kman/vimexx-ddns-clie
 
 The docker container needs access to your secrets. Create a configuration file as shown above, and write it somewhere secure where docker has access to it, then add it to your docker container as shown below in the Docker Compose configuration file.
 
-This is a sample Docker Compose configuration file.
+This is an example Docker Compose configuration file:
+
+- Set the domain with VIMEXX_DNS_DOMAIN, in this example, 'your.domain.com'
+- Set how often the container should check for a modified local IP address, by default 30 seconds
 
 ```
 services:
@@ -177,7 +183,8 @@ services:
     volumes:
       - /path/to/secure/config/file:/etc/vimexx-dns.conf:ro
     environment:
-      - VIMEXX_DNS_DOMAIN=<your.domain.com>
+      - VIMEXX_DNS_DOMAIN=your.domain.com
+      - VIMEXX_SLEEP=30
 ```
 
 This can also be used directly to create a [Portainer stack](https://docs.portainer.io/user/docker/stacks/add).

@@ -5,7 +5,7 @@ RUN set -x ; \
     apk update \
     && apk add perl db zlib openssl \
     && apk add build-base perl-dev perl-app-cpanminus db-dev zlib-dev openssl-dev \
-    && cpanm JSON AppConfig::Std LWP::UserAgent Data::Dump DB_File LWP::Protocol::https \
+    && cpanm JSON AppConfig::Std LWP::UserAgent Net::DNS DB_File LWP::Protocol::https \
     && rm -rf /root/.cpanm /var/cache/apk/* /usr/local/share/man/man?/* \
     && apk del build-base perl-dev perl-app-cpanminus db-dev zlib-dev openssl-dev
 

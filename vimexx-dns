@@ -8,11 +8,12 @@ use AppConfig::Std;
 use LWP::UserAgent;
 use HTTP::Request::Common;
 use JSON;
-use Data::Dump;
+#use Data::Dump;
 use DB_File;
+use Net::DNS;
 
 use vars qw ($VERSION);
-$VERSION = '1.0';
+$VERSION = '1.1';
 
 my %ttl = (
   '24h' => 24*3600,
@@ -32,6 +33,7 @@ $config->define("delete|d!",        { DEFAULT => 0 });
 $config->define("dryrun!",          { DEFAULT => 0 });
 $config->define("clear|c!",         { DEFAULT => 0 });
 $config->define("ddns!",            { DEFAULT => 0 });
+$config->define("nons|n!",          { DEFAULT => 0 });
 $config->define("quiet|q!",         { DEFAULT => 0 });
 $config->define("cache=s",          { DEFAULT => '/dev/shm/vimexx.cache' });
 $config->define("getip=s",          { DEFAULT => 'http://icanhazip.com' });
@@ -64,8 +66,11 @@ vimexx-dns [OPTION]... DOMAIN [CONTENT]
 
 =head1 OPTIONS AND ARGUMENTS
 
-  -t,-record_ttl     Specify DNS TTL. Valid values are 24h (the default),
+  -t,-record_ttl     Specify the DNS TTL. Valid values are 24h (the default),
                      8h, 4h, 2h, 1h, 10m and 5m.
+  -n,-nons           Do NOT use an authorative nameserver to find the actual TTL
+                     of a DNS record. When this is set, all records will be set to
+                     the TTL specified with -t.
 
   -d,-delete         Deletes the most recently added record, but only if
                      it was added in the last 600 seconds.
@@ -78,7 +83,7 @@ vimexx-dns [OPTION]... DOMAIN [CONTENT]
      -help           Print this info
      -verbose        Verbose output
      -debug          Debug output
-  -q,-quiet          Surpress all output
+  -q,-quiet          Suppress all output
 
      -login_id       Vimexx API id
      -login_secret   Vimexx API secret
@@ -100,6 +105,15 @@ ownership using a DNS-01 challenge, and to automate this procedure.
 It is also be possible to update a record in your domain with the current
 public IPv4 address of your internet connection, thus avoiding the use of
 a 3th party dynamic DNS service.
+
+Note that the Vimexx API does not return the TTL of a DNS record. By default,
+the script will use an authorative nameserver to find the actual TTL of a DNS
+record. If this fails, or is disabled with the -n option, the TTL used will be
+be a default configured by the -t option.
+
+The script will cache the authentication token and the DNS records for
+10 minutes, so if you run this script multiple times in a short
+period of time, it will not re-authenticate or re-fetch the DNS records.
 
 =cut
 
@@ -212,6 +226,26 @@ unless ( exists $cache{"dns.$domain.timestamp"} and $cache{"dns.$domain.timestam
 
   print "Requesting DNS records for $domain.\n" if $config->verbose;
 
+  my $auth_resolver;
+
+  unless ( $config->nons) {
+
+    # Get the authoritative nameservers for this domain
+    my $resolver = Net::DNS::Resolver->new;
+    my $ns_query = $resolver->query($domain, 'NS');
+    die "No NS records found\n" unless $ns_query;
+
+    # Get the first nameserver
+    my ($ns_record) = grep { $_->type eq 'NS' } $ns_query->answer;
+    my $auth_ns = $ns_record->nsdname;
+    $auth_resolver = Net::DNS::Resolver->new(
+      nameservers => [$auth_ns],
+      recurse     => 0,  # no recursion
+      debug       => 0,
+    );
+  }
+
+  # Get the DNS records for this domain
   my $r = HTTP::Request::Common::POST('https://api.vimexx.nl/api/v1/whmcs/domain/dns',
                                       'Authorization' => $cache{'auth.token_type'} . ' ' . $cache{'auth.access_token'},
                                       'Content' => encode_json \%data);
@@ -224,8 +258,32 @@ unless ( exists $cache{"dns.$domain.timestamp"} and $cache{"dns.$domain.timestam
 
   # Cleanup: add ttl fields and remove unnecessary prio fields
   foreach my $record ( @{$decoded->{'dns_records'}} ) {
-    $record->{'ttl'} = $ttl{$config->record_ttl};
+    # Remove prio field if not needed
     delete $record->{'prio'} unless defined $record->{'prio'};
+
+    # Set default TTL for this record
+    $record->{'ttl'} = $ttl{$config->record_ttl};
+
+    # Skip if we don't need to query the actual TTL
+    next if $config->nons;
+
+    # Try and use NS to set actual TTL
+    my $query = $auth_resolver->send($record->{'name'}, $record->{'type'});
+    die "Query to authorative NS failed\n" unless $query;
+
+    foreach my $rr ($query->answer) {
+      if ( 'MX' eq $record->{'type'} ) {
+        my $mx = $rr->exchange . '.';
+        next unless $mx eq $record->{'content'};
+        $record->{'ttl'} = $rr->ttl;
+        printf("Found TTL %d for MX record %s\n", $record->{'ttl'}, $record->{'content'}) if $config->verbose;
+        last;
+      } else {
+        $record->{'ttl'} = $rr->ttl;
+        printf("Found TTL %d for %s record %s\n", $record->{'ttl'}, $record->{'type'}, $record->{'name'}) if $config->verbose;
+        last;
+      }
+    }
   }
 
   $records = $decoded->{'dns_records'};
@@ -312,7 +370,7 @@ unless ( $found_old ) {
   $dns_changed = 1;
 }
 
-dd $data{'body'}{'dns_records'} if $config->debug;
+#dd $data{'body'}{'dns_records'} if $config->debug;
 
 #
 # And update DNS records

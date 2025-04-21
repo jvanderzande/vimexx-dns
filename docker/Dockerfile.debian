@@ -3,5 +3,6 @@ COPY vimexx-dns /root
 COPY docker/start.sh /root
 RUN set -x ; \
     apt-get update \
-    && apt-get -y install libjson-perl libappconfig-std-perl liblwp-protocol-https-perl
+    && apt-get -y install --no-install-recommends libjson-perl libappconfig-std-perl liblwp-protocol-https-perl libnet-dns-resolver-unbound-perl \
+    && rm -rf /var/lib/apt/lists/*
 ENTRYPOINT ["/root/start.sh"]
