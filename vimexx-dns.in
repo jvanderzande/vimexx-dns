@@ -17,7 +17,7 @@ my $dump_loaded = eval {
 };
 
 use vars qw ($VERSION);
-$VERSION = '1.2.0';
+$VERSION = '@VERSION@';
 
 my %ttl = (
   '24h' => 24*3600,
