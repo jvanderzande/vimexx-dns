@@ -14,7 +14,7 @@ IMAGES := $(patsubst $(DOCKER_DIR)/Dockerfile.%,%, $(DOCKERFILES))
 IMAGE_PREFIX := 2kman/vimexx-ddns-client
 
 # Versie die aan images wordt toegevoegd
-VERSION := 1.1.0
+VERSION := 1.2.0
 
 # Default target
 .PHONY: all

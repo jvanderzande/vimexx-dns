@@ -8,12 +8,16 @@ use AppConfig::Std;
 use LWP::UserAgent;
 use HTTP::Request::Common;
 use JSON;
-#use Data::Dump;
 use DB_File;
 use Net::DNS;
 
+my $dump_loaded = eval {
+    require Data::Dump;
+    1;  # return true if successful
+};
+
 use vars qw ($VERSION);
-$VERSION = '1.1';
+$VERSION = '1.2.0';
 
 my %ttl = (
   '24h' => 24*3600,
@@ -205,7 +209,11 @@ unless ( exists $cache{'auth.expires'} and $cache{'auth.expires'}>time() ) {
   print "Received new authentication code.\n" if $config->verbose;
 
   my $decoded = decode_json $response->decoded_content;
-  dd $decoded if $config->debug;
+
+  if ( $dump_loaded ) {
+    Data::Dump::dd($decoded) if $config->debug;
+  }
+
   map { $cache{"auth.$_"} = $decoded->{$_} } keys %{$decoded};
   $cache{'auth.expires'} = $decoded->{'expires_in'} + time() - 3600;
 } else {
@@ -298,7 +306,9 @@ unless ( exists $cache{"dns.$domain.timestamp"} and $cache{"dns.$domain.timestam
   printf("Loaded %d cached DNS records.\n", scalar @{$records}) if $config->verbose;
 }
 
-dd $records if $config->debug;
+if ( $dump_loaded ) {
+  Data::Dump::dd(\$records) if $config->debug;
+}
 
 #
 # The record we're about to add/delete/update
@@ -350,6 +360,10 @@ foreach my $record ( @{$records} ) {
 
       # The record actually changed
       printf("Updating DNS '%s' record '%s' -> '%s'\n", $record->{'type'}, $record->{'name'}, $new_record{'content'}) unless $config->quiet;
+
+      # We want to keep the TTL of the old record
+      $new_record{'ttl'} = $record->{'ttl'};
+      $new_record{'prio'} = $record->{'prio'} if defined $record->{'prio'};
       push @{$data{'body'}{'dns_records'}} , \%new_record;
       $dns_changed = 1;
 
@@ -370,7 +384,9 @@ unless ( $found_old ) {
   $dns_changed = 1;
 }
 
-#dd $data{'body'}{'dns_records'} if $config->debug;
+if ( $dump_loaded ) {
+  Data::Dump::dd($data{'body'}{'dns_records'}) if $config->debug;
+}
 
 #
 # And update DNS records

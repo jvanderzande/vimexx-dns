@@ -23,7 +23,7 @@ Simply copy the script vimexx-dns to any location, then install the necessary de
 ## Dependencies
 
 ```
-sudo apt install libappconfig-std-perl libjson-perl
+sudo apt install libappconfig-std-perl libjson-perl libnet-dns-perl
 ```
 
 # Setup
