@@ -18,9 +18,20 @@ any dynamic IP addresses you have.
 
 # Installation
 
+## Using apt on Debian
+
+Add the [vimexx-dns repository](https://repo.qb21.nl) to your system, then download the most recent version.
+
+```
+sudo apt install vimexx-dns
+```
+As a bonus, it's easy to remain up-to-date!
+
+## Manually
+
 Simply copy the script vimexx-dns to any location, then install the necessary dependencies.
 
-## Dependencies
+### Dependencies
 
 ```
 sudo apt install libappconfig-std-perl libjson-perl libnet-dns-perl
